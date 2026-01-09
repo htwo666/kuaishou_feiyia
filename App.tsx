@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Inheritor, ViewType, SiteConfig } from './types';
 import { INITIAL_INHERITORS, DEFAULT_SITE_CONFIG } from './constants';
@@ -8,14 +7,8 @@ import { InheritorForm } from './components/InheritorForm';
 import { SiteConfigForm } from './components/SiteConfigForm';
 import { Button } from './components/Button';
 
-const STORAGE_KEY = 'ich_archive_v4';
-const CONFIG_KEY = 'ich_config_v4';
-// GitHub 数据仓库配置
-const GITHUB_REPO_OWNER = 'htwo666';
-const GITHUB_REPO_NAME = 'kuaishou_feiyi_data';
-const GITHUB_DATA_FILE = 'data/archive.json';
-const GITHUB_CONFIG_FILE = 'data/config.json';
-const DEFAULT_GITHUB_TOKEN = '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';
+const STORAGE_KEY = 'ich_archive_local_v1';
+const CONFIG_KEY = 'ich_config_local_v1';
 
 const KuaishouLogo = ({ light = false }: { light?: boolean }) => (
   <div className="flex items-center select-none group">
@@ -37,28 +30,11 @@ const App: React.FC = () => {
   const [selectedInheritorId, setSelectedInheritorId] = useState<string | null>(null);
   const [editingInheritor, setEditingInheritor] = useState<Inheritor | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // 同步状态管理
-  const [syncId, setSyncId] = useState<string | null>(null);
-  const [syncStatus, setSyncStatus] = useState<'local' | 'syncing' | 'synced' | 'error'>('local');
-  const [lastSyncTime, setLastSyncTime] = useState<number>(0);
-  
-  // 用于标记更新来源，防止循环同步
-  const isRemoteUpdate = useRef(false);
-  const debounceTimer = useRef<number | null>(null);
 
-  // 1. 初始化数据加载
+  // 1. 初始化数据加载 (仅本地)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const archiveId = params.get('archive');
-    
-    if (archiveId) {
-      setSyncId(archiveId);
-      loadFromCloud(archiveId);
-    } else {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      setInheritors(saved ? JSON.parse(saved) : INITIAL_INHERITORS);
-    }
+    const saved = localStorage.getItem(STORAGE_KEY);
+    setInheritors(saved ? JSON.parse(saved) : INITIAL_INHERITORS);
 
     const savedConfig = localStorage.getItem(CONFIG_KEY);
     if (savedConfig) setSiteConfig(JSON.parse(savedConfig));
@@ -79,93 +55,12 @@ const App: React.FC = () => {
     });
   }, [inheritors, searchQuery]);
 
-  // 2. 云端核心逻辑
-  const loadFromCloud = async (id: string) => {
-    if (syncStatus === 'syncing' && lastSyncTime !== 0) return; // 避免重叠加载
-    setSyncStatus('syncing');
-    try {
-      const resp = await fetch(`${SYNC_API_BASE}${id}`);
-      if (!resp.ok) throw new Error("Cloud archive not found");
-      const data = await resp.json();
-      
-      // 检查数据是否真的改变了，避免不必要的渲染
-      if (JSON.stringify(data) !== JSON.stringify(inheritors)) {
-        isRemoteUpdate.current = true;
-        setInheritors(data);
-      }
-      
-      setSyncStatus('synced');
-      setLastSyncTime(Date.now());
-    } catch (e) {
-      console.error("Cloud Sync Error:", e);
-      setSyncStatus('error');
-    }
-  };
-
-  const saveToCloud = async (id: string, data: Inheritor[]) => {
-    setSyncStatus('syncing');
-    try {
-      const resp = await fetch(`${SYNC_API_BASE}${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      if (!resp.ok) throw new Error("Push failed");
-      setSyncStatus('synced');
-      setLastSyncTime(Date.now());
-    } catch (e) {
-      setSyncStatus('error');
-    }
-  };
-
-  const createSyncRoom = async () => {
-    setSyncStatus('syncing');
-    try {
-      const resp = await fetch(SYNC_API_BASE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(inheritors)
-      });
-      const result = await resp.json();
-      const id = result.id;
-      setSyncId(id);
-      window.history.replaceState({}, '', `?archive=${id}`);
-      setSyncStatus('synced');
-      setLastSyncTime(Date.now());
-      alert(`已成功创建云端档案！\n您的提取码为: ${id}\n链接已复制，他人扫码或通过链接即可实时协作。`);
-      navigator.clipboard.writeText(window.location.href);
-    } catch (e) {
-      console.error(e);
-      alert("云端服务暂时无法连接，请稍后再试。");
-      setSyncStatus('error');
-    }
-  };
-
-  // 3. 自动同步心跳 (仅用于拉取他人更新)
-  useEffect(() => {
-    if (!syncId) return;
-    const interval = setInterval(() => {
-      loadFromCloud(syncId);
-    }, 10000); 
-    return () => clearInterval(interval);
-  }, [syncId]);
-
-  // 4. 持久化存储
+  // 2. 本地持久化存储
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(inheritors));
-    if (isRemoteUpdate.current) {
-      isRemoteUpdate.current = false;
-      return;
-    }
-    if (syncId) {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-      debounceTimer.current = window.setTimeout(() => {
-        saveToCloud(syncId, inheritors);
-      }, 1500);
-    }
-  }, [inheritors, syncId]);
+  }, [inheritors]);
 
-  // 5. 站点配置持久化
+  // 3. 站点配置持久化
   useEffect(() => {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(siteConfig));
   }, [siteConfig]);
@@ -197,28 +92,17 @@ const App: React.FC = () => {
                 <span className="text-[8px] text-gray-400 font-bold uppercase tracking-widest">{siteConfig.headerSubtitle}</span>
               </div>
               
+              {/* 简化状态显示：只显示本地模式 */}
               <div className="flex items-center ml-4 px-3 py-1 bg-gray-50 rounded-full border border-gray-100">
-                <div className={`w-1.5 h-1.5 rounded-full mr-2 ${
-                  syncStatus === 'synced' ? 'bg-green-500 animate-pulse' : 
-                  syncStatus === 'syncing' ? 'bg-[#FF5000] animate-bounce' : 
-                  syncStatus === 'error' ? 'bg-red-500' : 'bg-gray-300'
-                }`}></div>
+                <div className={`w-1.5 h-1.5 rounded-full mr-2 bg-green-500`}></div>
                 <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter">
-                  {syncStatus === 'synced' ? 'Cloud Synced' : syncStatus === 'syncing' ? 'Syncing...' : syncStatus === 'error' ? 'Sync Failed' : 'Local Archive'}
+                  Local Archive
                 </span>
-                {syncId && <span className="text-[9px] text-gray-300 ml-2 font-mono">ID:{syncId}</span>}
               </div>
             </div>
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="hidden md:flex gap-6 mr-6">
-              {!syncId ? (
-                <button onClick={createSyncRoom} className="text-[10px] font-black text-[#FF5000] uppercase tracking-widest hover:underline">开启云端同步</button>
-              ) : (
-                <button onClick={() => { if(confirm('退出同步将停止实时保存，确定吗？')) { window.history.replaceState({}, '', window.location.pathname); window.location.reload(); } }} className="text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-red-500">停止同步</button>
-              )}
-            </div>
             <button onClick={() => setCurrentView('settings')} className="w-10 h-10 flex items-center justify-center text-gray-300 hover:text-[#FF5000] transition-colors">⚙</button>
             <Button onClick={() => { setEditingInheritor(null); setCurrentView('upload'); }} className="!bg-[#FF5000] !hover:bg-[#E64800]">录入档案</Button>
           </div>
@@ -234,12 +118,6 @@ const App: React.FC = () => {
                   <span className="text-[10px] font-black text-[#FF5000] uppercase tracking-[0.4em] block">Digital Archive System</span>
                   <h2 className="text-4xl md:text-5xl font-black text-gray-900 serif mt-2">非遗传习学堂档案库</h2>
                 </div>
-                {syncId && (
-                  <div className="text-right pb-1">
-                    <p className="text-[10px] text-gray-400 font-bold tracking-widest uppercase">Last Cloud Update</p>
-                    <p className="text-[10px] text-gray-900 font-mono">{new Date(lastSyncTime).toLocaleTimeString()}</p>
-                  </div>
-                )}
               </div>
               <p className="text-lg text-gray-400 font-light max-w-2xl">
                 已收录 <span className="text-gray-900 font-bold">{inheritors.length}</span> 位传承人。输入关键词或点击卡片浏览详尽资料。
@@ -339,12 +217,6 @@ const App: React.FC = () => {
                     <p className="text-gray-500 text-sm font-light leading-relaxed max-w-sm">
                         {siteConfig.footerDescription}
                     </p>
-                    {syncId && (
-                      <div className="inline-flex items-center px-4 py-2 bg-white/5 border border-white/10 rounded-2xl">
-                        <span className="text-[10px] font-black text-[#FF5000] uppercase tracking-widest mr-3">Shared Archive ID</span>
-                        <code className="text-xs font-mono text-white/60">{syncId}</code>
-                      </div>
-                    )}
                 </div>
                 <div className="md:col-span-7 flex flex-wrap justify-between gap-12">
                     <div className="space-y-6 min-w-[120px]">
@@ -361,9 +233,8 @@ const App: React.FC = () => {
                             <div className="relative group">
                                 <div className="absolute -inset-2 bg-gradient-to-r from-[#FF5000] to-[#FF8000] rounded-[2rem] blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
                                 <div className="relative w-32 h-32 bg-white p-2.5 rounded-[1.8rem] shadow-2xl flex items-center justify-center overflow-hidden">
-                                    {/* 如果用户上传了自定义二维码，优先显示；否则按逻辑生成 */}
                                     <img 
-                                      src={siteConfig.footerQrCode || `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(syncId ? window.location.href : 'http://weixin.qq.com/r/mp/5REQCG3ETTAyrSlr90T3')}&color=121212`} 
+                                      src={siteConfig.footerQrCode || `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent('https://github.com/htwo666')}&color=121212`} 
                                       alt="二维码" 
                                       className="w-full h-full object-contain"
                                     />
@@ -372,14 +243,16 @@ const App: React.FC = () => {
                             <div className="space-y-4 pt-2">
                                 <div className="space-y-1">
                                     <p className="text-xs font-bold text-white tracking-wider">
-                                      {siteConfig.footerQrCode ? '扫码查阅详情' : (syncId ? '扫码共享此档案' : '扫码关注 · 官方公众号')}
+                                      扫码关注 · 官方渠道
                                     </p>
                                     <p className="text-[10px] text-[#FF5000] font-black uppercase tracking-widest">
-                                      {siteConfig.footerQrCode ? 'SCAN FOR INFO' : (syncId ? 'COLLABORATIVE ACCESS' : 'OFFICIAL WECHAT')}
+                                      OFFICIAL CHANNEL
                                     </p>
                                 </div>
                                 <p className="text-[10px] text-gray-500 leading-relaxed font-light italic">
-                                    {siteConfig.footerQrCode ? '扫描上方二维码\n获取更多非遗相关讯息\n数字化赋能匠心传承' : (syncId ? '使用另一台设备扫码\n即可实时查阅或共同编辑\n当前的所有传承人档案' : '扫描二维码进入快手公益官方平台\n了解更多非遗保护动态\n科技守护，匠心传承')}
+                                    扫描二维码进入快手公益官方平台
+                                    了解更多非遗保护动态
+                                    科技守护，匠心传承
                                 </p>
                             </div>
                         </div>
