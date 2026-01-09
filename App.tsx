@@ -10,7 +10,12 @@ import { Button } from './components/Button';
 
 const STORAGE_KEY = 'ich_archive_v4';
 const CONFIG_KEY = 'ich_config_v4';
-const SYNC_API_BASE = 'https://api.npoint.io/';
+// GitHub 数据仓库配置
+const GITHUB_REPO_OWNER = 'htwo666';
+const GITHUB_REPO_NAME = 'kuaishou_feiyi_data';
+const GITHUB_DATA_FILE = 'data/archive.json';
+const GITHUB_CONFIG_FILE = 'data/config.json';
+const DEFAULT_GITHUB_TOKEN = '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';
 
 const KuaishouLogo = ({ light = false }: { light?: boolean }) => (
   <div className="flex items-center select-none group">
