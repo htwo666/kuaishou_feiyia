@@ -18,7 +18,7 @@ export interface Inheritor {
   avatar?: string;
   contact: string;
   skillAndLevel: string;
-  updatedAt?: number; // 用于版本检查
+  updatedAt?: number;
   bio: {
     birthDate?: string;
     birthPlace?: string;
@@ -34,7 +34,14 @@ export interface SiteConfig {
   footerTitle: string;
   footerDescription: string;
   footerTags: string[];
-  footerQrCode?: string; // 新增：页尾二维码 Base64
+  footerQrCode?: string;
+}
+
+// 新增：全量归档状态
+export interface ArchiveState {
+  inheritors: Inheritor[];
+  siteConfig: SiteConfig;
+  lastUpdated: number;
 }
 
 export type ViewType = 'list' | 'detail' | 'upload' | 'settings';
